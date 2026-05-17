@@ -1,0 +1,20 @@
+{
+  "bimri_version": "2.1-ca",
+  "project_id": "unset",
+  "run_count": 0,
+  "current_run_id": "R000",
+  "current_session_id": null,
+  "last_started_at": null,
+  "last_bimri_update_run": 0,
+  "last_light_maintenance_run": 0,
+  "last_deep_maintenance_run": 0,
+  "light_maintenance_interval_runs": 3,
+  "deep_maintenance_interval_runs": 10,
+  "maintenance_mode": "warn",
+  "prune_policy": "archive_only",
+  "token_budget_soft": 3000,
+  "token_budget_hard": 4000,
+  "max_active_entries": 24,
+  "max_patterns": 10,
+  "max_inbox_files": 10
+}
