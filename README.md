@@ -1,6 +1,6 @@
 # BIMRI for Claude Code and Coding Agents
 
-**Brief Interaction Memory and Retrieval Intelligence - v2.1-ca**
+**Brief Interaction Memory and Retrieval Intelligence - v3**
 
 BIMRI is a lightweight project memory protocol for coding agents. It gives the agent a small, useful memory file that survives across sessions without turning into a bloated session diary.
 
@@ -10,7 +10,7 @@ The core rule:
 
 This release upgrades the original Claude Code focused version into a cross-agent version. The main startup trigger is now `AGENTS.md`, while Claude Code is supported through a small `CLAUDE.md` bridge.
 
-## What changed in v2.1-ca
+## What changed in v3-ca
 
 - `AGENTS.md` becomes the universal startup trigger for agents that read repository instruction files.
 - `CLAUDE.md` imports `AGENTS.md`, because Claude Code reads `CLAUDE.md` rather than `AGENTS.md` directly.
