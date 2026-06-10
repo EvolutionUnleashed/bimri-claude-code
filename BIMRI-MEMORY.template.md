@@ -1,36 +1,21 @@
 # BIMRI Memory
 
-<!-- BIMRI v2.1-ca | Active memory only. Not a diary. -->
-<!-- State file: .bimri/state.json -->
-<!-- Full protocol: BIMRI-PROTOCOL.md -->
+<!-- BIMRI v4 | Headlines and pointers only. Full detail lives in .bimri/log/ -->
+<!-- Engine: bimri-engine.py | Protocol: BIMRI-PROTOCOL.md | State: .bimri/state.json -->
 
 ## Tier 1: Core Intelligence
 
-Permanent project facts, durable decisions, hard constraints, and user preferences.
-
-Use only when the memory should affect most future sessions.
+<!-- Durable facts, decisions, constraints, preferences. One line each. Cap: 12. -->
+<!-- Format: [Rnnn-Enn] [decision|fact|pref|rule] [tags] text -->
 
 ## Tier 2: Active Context
 
-Current work state, open loops, unresolved risks, near-term next actions, and recently important outcomes.
-
-Entry format:
-
-```text
-[ID:R001-E01] [I:3] [STATUS:active] [TTL:5r/14d] [FIRST:R001] [LAST:R001] [TAGS:example] [WEIGHT:3.0]
-One concise sentence describing useful active context.
-```
+<!-- Open loops, current state, risks, next actions. One line each. Cap: 20. -->
+<!-- Format: [Rnnn-Enn] [I:n] [active|watch|closed] [F:Rnnn] [L:Rnnn] [tags] headline -> log/Rnnn.md -->
 
 ## Tier 3: Pattern Recognition
 
-Evidence-backed patterns about the project, user preferences, or workflow.
-
-Pattern format:
-
-```text
-[PATTERN:P001] [CONFIDENCE:emerging] [OBS:1] [EVIDENCE:R001-E01]
-Pattern hypothesis.
-Falsify if: clear condition that would disprove or weaken the pattern.
-```
+<!-- Evidence-backed patterns. Cap: 8. No evidence IDs, no pattern. -->
+<!-- Format: [Pnnn] [emerging|developing|established] [obs:n] [ev:ID,ID] hypothesis | Falsify: condition -->
 
 <!-- END BIMRI -->

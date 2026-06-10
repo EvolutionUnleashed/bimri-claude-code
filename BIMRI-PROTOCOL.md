@@ -1,358 +1,212 @@
-# BIMRI Protocol v2.1-ca
+# BIMRI Protocol v4
 
 Brief Interaction Memory and Retrieval Intelligence.
 
-This is the full BIMRI operating protocol. Keep the short bootstrap in `AGENTS.md`. Keep this file in the repository root as:
+This is the full BIMRI operating protocol. The short bootstrap lives in `AGENTS.md`. Keep this file in the repository root as `BIMRI-PROTOCOL.md`.
 
-```text
-BIMRI-PROTOCOL.md
-```
-
-## Core principle
+## Core Principles
 
 `bimri.md` is not a diary. It is the current operating state.
 
-The agent should only promote information into active memory when it is likely to affect future work. Raw notes, uncertain memories, and low-confidence details belong in `.bimri/inbox/` until consolidated.
+Two rules sit underneath everything else in v4.
 
-## File model
+Write ahead. Journal decisions and outcomes into the run log at the moment they happen. A session that dies still leaves a complete record up to the point of death. Reconstructing memory at the end of a session is the failure mode this protocol exists to remove.
+
+Headlines live in hot memory, bodies live on disk. Every entry in `bimri.md` is one line: identity, scoring metadata, a single-sentence headline, and a pointer to the full record in `.bimri/log/`. Depth is always one grep away, so hot memory stays permanently small.
+
+## The Two Layers
+
+BIMRI v4 is layered. The markdown protocol works standalone in any agent that reads repository instruction files. The engine, `bimri-engine.py`, is one optional dependency-free script that takes over every deterministic job when present: run counting, decay math, cap enforcement, orphan detection, archival, and index building.
+
+With the engine installed, the agent receives a BIMRI BRIEF at session start and spends zero attention on bookkeeping. Without it, the agent follows the protocol-only fallback steps in this document. Judgment about what matters and how to compress it belongs to the agent in both modes. Arithmetic belongs to the engine whenever the engine exists.
+
+## File Model
 
 ```text
 AGENTS.md                    # cross-agent bootstrap
 CLAUDE.md                    # Claude Code bridge that imports AGENTS.md
 BIMRI-PROTOCOL.md            # this full protocol
+bimri-engine.py              # optional deterministic engine
 BIMRI-STATE.template.json    # template for .bimri/state.json
 BIMRI-MEMORY.template.md     # template for bimri.md
-bimri.md                     # compact active project memory
+bimri.md                     # hot memory: headlines and pointers only
 .bimri/
-  state.json                 # run count, maintenance state, budgets
+  state.json                 # run count, cadence class, caps, thresholds
+  index.tsv                  # machine-built map of every ID to its location
+  log/                       # append-only run logs, one file per run
   inbox/                     # raw notes awaiting consolidation
-  archive/                   # stale or closed memory, never auto-deleted
-  backups/                   # snapshots before maintenance
+  archive/                   # demoted memory with provenance, never deleted
+  backups/                   # hot memory snapshots before any modification
 ```
 
-## Relationship to other memory systems
+## Hot Memory Format
 
-BIMRI does not replace agent auto memory, documentation, issue trackers, or code comments.
-
-Use other systems for:
-
-- build commands;
-- package manager quirks;
-- lint commands;
-- local environment fixes;
-- specific file paths;
-- routine implementation details.
-
-Use BIMRI for:
-
-- project purpose;
-- durable decisions;
-- strategic context;
-- user preferences;
-- active risks;
-- unresolved threads;
-- current operating state;
-- behavioral or project patterns backed by evidence.
-
-## State file
-
-BIMRI uses `.bimri/state.json` as the source of truth for run count and maintenance state. Do not infer the run number from prose.
-
-Expected fields are defined in `BIMRI-STATE.template.json`.
-
-Important fields:
-
-```json
-{
-  "bimri_version": "2.1-ca",
-  "run_count": 0,
-  "current_run_id": "R000",
-  "last_bimri_update_run": 0,
-  "last_light_maintenance_run": 0,
-  "last_deep_maintenance_run": 0,
-  "light_maintenance_interval_runs": 3,
-  "deep_maintenance_interval_runs": 10,
-  "maintenance_mode": "warn",
-  "prune_policy": "archive_only",
-  "token_budget_soft": 3000,
-  "token_budget_hard": 4000,
-  "max_active_entries": 24,
-  "max_patterns": 10,
-  "max_inbox_files": 10
-}
-```
-
-### Run counter rule
-
-Increment `run_count` once per new agent startup. Do not increment for repeated stop checks, compaction, or minor internal retries.
-
-If the agent cannot confidently distinguish a resumed session from a new run, it should warn the user and proceed conservatively.
-
-## Session start protocol
-
-At the start of every meaningful task:
-
-1. Read `AGENTS.md`.
-2. Read `bimri.md` if it exists.
-3. If `bimri.md` is missing, create it from `BIMRI-MEMORY.template.md`.
-4. Ensure `.bimri/inbox/`, `.bimri/archive/`, and `.bimri/backups/` exist.
-5. Read `.bimri/state.json` if it exists.
-6. If `.bimri/state.json` is missing, create it from `BIMRI-STATE.template.json`.
-7. Increment `run_count` once for the new run and update `current_run_id`.
-8. Check whether light or deep maintenance is due.
-9. Use BIMRI context before planning or editing.
-
-If the project is new and `bimri.md` has no Tier 1 entries, ask at most 3 orientation questions unless the user clearly wants to proceed immediately:
-
-- What is this project for?
-- What matters most right now?
-- What constraints or preferences should future agents remember?
-
-If the user skips intake, continue and populate BIMRI from observed context.
-
-## Active memory structure
-
-`bimri.md` has three tiers.
+`bimri.md` has three tiers. Every entry is exactly one line. The caps are the budget: line counts are enforceable by a script and by a model, while token estimates are enforceable by neither.
 
 ### Tier 1: Core Intelligence
 
-Permanent project facts, durable decisions, hard constraints, and user preferences. Keep this small. Tier 1 should change only when facts change or the user explicitly corrects memory.
-
-Example:
+Durable facts, decisions, constraints, preferences, and graduated operating rules. Cap: 12 lines. No decay applies here. Change a Tier 1 line only when a fact changes or the user corrects memory.
 
 ```text
-[ID:R001-E01] [I:5] [STATUS:decision] [FIRST:R001] [LAST:R001] [TAGS:purpose]
-This project is a cross-agent memory protocol for coding agents, designed to reduce cold-start loss across sessions.
+[R001-E01] [decision] [arch] Run logs are append-only; hot memory is never reconstructed from scratch.
+[R004-E02] [pref] [style] User wants briefs in plain prose with zero filler.
 ```
+
+Kinds: `decision`, `fact`, `pref`, `rule`. A `rule` is a graduated pattern, see Pattern Graduation below.
 
 ### Tier 2: Active Context
 
-Current work state, open loops, unresolved risks, near-term next actions, and recently important outcomes.
-
-Entry format:
+Open loops, current work state, risks, and near-term actions. Cap: 20 lines soft, 26 hard.
 
 ```text
-[ID:R017-E01] [I:3] [STATUS:active] [TTL:5r/14d] [FIRST:R017] [LAST:R017] [TAGS:architecture,billing] [WEIGHT:2.4]
-Implemented Stripe webhook retry design; next session should verify idempotency tests before deployment.
+[R047-E02] [I:3] [active] [F:R047] [L:R051] [billing] Stripe retry design done; verify idempotency tests next. -> .bimri/log/R047.md
 ```
+
+Fields in order: ID, importance 1 to 5, status, first run, last relevant run, tags, headline, pointer. Statuses: `active`, `watch`, `closed`, and `decision` as a transitional marker meaning promote this to Tier 1 at the next touch. The WEIGHT and TTL fields from v3 are gone. Weight is computed transiently by the engine from `[L:]` and never written to disk, which removes the rewrite-every-entry burden that made v3 maintenance unreliable.
+
+When an entry materially matters again during a run, update its `[L:]` to the current run. That single field refresh is what keeps a live entry alive.
 
 ### Tier 3: Pattern Recognition
 
-Evidence-backed hypotheses about project behavior, user preferences, or recurring workflow patterns.
-
-Pattern format:
+Evidence-backed hypotheses. Cap: 8 patterns. No evidence IDs, no pattern.
 
 ```text
-[PATTERN:P003] [CONFIDENCE:developing] [OBS:4] [EVIDENCE:R004-E02,R009-E01,R014-E03,R017-E01]
-User prefers architectural simplification before feature expansion.
-Falsify if: user repeatedly prioritizes speed-to-ship over structural cleanup.
+[P003] [developing] [obs:4] [ev:R004-E02,R009-E01,R014-E03,R017-E01] User simplifies architecture before expanding features. | Falsify: user repeatedly ships speed over structure.
 ```
 
-Pattern confidence:
+Confidence: `emerging` for 1 to 2 observations, `developing` for 3 to 5, `established` for 6 or more.
 
-- `emerging`: 1 to 2 observations;
-- `developing`: 3 to 5 observations;
-- `established`: 6 or more observations.
+## Importance Scoring
 
-No evidence IDs means no pattern.
+- `I:5` foundational, changes how every future session should work
+- `I:4` significant, a major deliverable or durable decision
+- `I:3` notable, useful for upcoming sessions
+- `I:2` minor, helpful but short-lived
+- `I:1` transient, belongs in the inbox or nowhere
 
-## Importance scoring
+When unsure, write to `.bimri/inbox/`, never to hot memory.
 
-Use this scale:
+## Run Logs And Write-Ahead Journaling
 
-- `I:5`: foundational, changes how every future session should work;
-- `I:4`: significant, major deliverable or durable decision;
-- `I:3`: notable, useful for upcoming sessions;
-- `I:2`: minor, helpful but short-lived;
-- `I:1`: transient, normally belongs in inbox or not at all.
-
-When unsure, write to `.bimri/inbox/`, not core BIMRI.
-
-## Freshness and weight
-
-Use simple lookup tables. Do not do elaborate math.
-
-### Days since last relevant use
-
-| Days | Multiplier |
-|---:|---:|
-| 0 to 1 | 1.0 |
-| 2 to 3 | 0.8 |
-| 4 to 5 | 0.5 |
-| 6 to 10 | 0.35 |
-| 11 to 15 | 0.2 |
-| 16 to 20 | 0.15 |
-| 21+ | 0.1 |
-
-### Runs since last relevant use
-
-| Runs | Multiplier |
-|---:|---:|
-| 0 to 1 | 1.0 |
-| 2 to 3 | 0.8 |
-| 4 to 5 | 0.5 |
-| 6 to 10 | 0.35 |
-| 11+ | 0.2 |
-
-Use the lower of the two multipliers.
+Every run gets one append-only file: `.bimri/log/R047.md`. The engine creates the stub at start; in protocol-only mode the agent creates it from the same shape.
 
 ```text
-composite_weight = importance * freshness_multiplier
+# Run R047 | 2026-06-10T09:00Z | hourly_cron
+
+## Journal
+
+[ID:R047-E01] [I:3] Full detail of a decision, written the moment it was made. Reasoning, alternatives rejected, anything a future session might need.
+[ID:R047-E02] [I:4] Another decision with its complete context.
+
+## Outcome
+
+[OUTCOME:success] Webhook retry verified, all tests green.
+[CLOSED:R047 2026-06-10T09:14Z]
 ```
 
-Important nuance: high-importance Tier 2 entries are not immortal. If an old `I:4` or `I:5` entry remains permanently relevant, promote it into Tier 1 as a decision or core fact. Otherwise it can still close and archive.
+Journal rhythm: append an `[ID:]` entry at every decision, milestone, or risk the moment it occurs. Appends cost 30 to 50 tokens and never require reading the file back. Run logs are immutable history. Nothing edits them after the fact, which makes them crash-safe and corruption-proof.
 
-## Lifecycle statuses
+Write timing differs by mode. BIMRI Loop journals at every decision without exception, because unattended runs die without warning. BIMRI Session sets that same behavior as its ceiling and allows a softer floor: a short supervised session may write its bodies once before closing, and any session that runs long or approaches auto-compaction escalates to milestone journaling, since compaction summarizes detail away and an end-of-session write can only record what survived.
 
-Use statuses instead of deleting entries.
+The `[OUTCOME:]` line is mandatory vocabulary: `success`, `partial`, `overflow`, `fail`, plus one line of why. The engine aggregates these across runs, so an agent that overflows one run in five shows up as data instead of a feeling.
 
-- `active`: affects current work;
-- `watch`: monitor but not immediately actionable;
-- `decision`: durable choice or project fact;
-- `closed`: resolved or no longer active;
-- `archived`: moved to archive;
-- `promoted`: merged into Tier 1 or Tier 3.
+Anything promoted into hot memory is a one-line headline pointing back at its log entry. The log entry holds the body forever.
 
-Lifecycle flow:
+## The Index And Retrieval
+
+`.bimri/index.tsv` maps every ID to its location: hot memory, run log detail, or archive. The engine rebuilds it at every start and close, so it is a cache, never a source of truth, and corruption costs nothing.
+
+Retrieval is grep. When depth is needed on any headline, pattern evidence, or archived entry:
 
 ```text
-active -> closed -> archived
-active -> decision -> Tier 1
-active -> pattern evidence -> Tier 3 evidence -> archived
-watch -> active or archived
+grep R047-E02 .bimri/index.tsv
+grep -r "billing" bimri.md .bimri/index.tsv
 ```
 
-## During work
+Read only the file the index points to. This is what makes aggressive pruning safe: archived memory stays one grep away, so demoting a line from hot memory loses nothing. The v3 archive was write-only and made agents hoard out of justified fear. The index removes the fear, which removes the hoarding, which is what keeps `bimri.md` small in practice instead of in theory.
 
-Work normally. Do not interrupt useful work just to update memory.
+## Decay, Cadence Classes, And Weight
 
-Track durable items:
+Freshness multiplies importance: `weight = importance x min(day_multiplier, run_multiplier)`. The day table is universal. The run table is selected by `cadence_class` in `state.json`, because a project touched three times a week and an agent running 24 times a day cannot share one freshness curve.
 
-- decisions made;
-- work completed that changes future context;
-- open loops;
-- risks;
-- constraints;
-- user preferences;
-- repeated behaviors worth testing as patterns.
+- `interactive` runs decay: 0-1 runs 1.0, 2-3 runs 0.8, 4-5 runs 0.5, 6-10 runs 0.35, 11+ runs 0.2
+- `daily_cron` runs decay: 0-2 runs 1.0, 3-6 runs 0.8, 7-12 runs 0.5, 13-24 runs 0.35, 25+ runs 0.2
+- `hourly_cron` runs decay: 0-24 runs 1.0, 25-72 runs 0.8, 73-168 runs 0.5, 169-336 runs 0.35, 337+ runs 0.2
+- Days, all classes: 0-1 days 1.0, 2-3 days 0.8, 4-5 days 0.5, 6-10 days 0.35, 11-15 days 0.2, 16-20 days 0.15, 21+ days 0.1
 
-Avoid storing routine technical details that are already captured in code, docs, issues, build files, or auto memory.
+Thresholds drive action. Below 0.5, an entry is flagged in the brief for agent judgment: refresh `[L:]` or close it. At or below 0.2 with importance 2 or lower, the engine archives it mechanically. Closed entries are archived mechanically at the next start. The engine never mechanically archives a healthy `I:4` or `I:5` entry; high-importance entries leave hot memory only through agent judgment, promotion to Tier 1, or decay below the flag threshold.
 
-## Before finishing meaningful work
+Protocol-only mode uses the simplified rule: archive any Tier 2 entry whose `[L:]` is older than 10 runs or 15 days for interactive work, or older than 150 runs for hourly cron work, unless it carries `I:4` or higher.
 
-Before the final response on meaningful work:
+## Session Start
 
-1. Create a backup of `bimri.md` in `.bimri/backups/` if possible.
-2. Add or update concise active memory in `bimri.md`.
-3. If no BIMRI update is needed, say why in one sentence.
-4. Update `.bimri/state.json`, especially `last_bimri_update_run`.
-5. If maintenance is due, warn the user and perform safe maintenance according to `maintenance_mode`.
-6. Confirm briefly: `BIMRI updated.` or `No BIMRI update needed.`
-
-If the session is ending abruptly, write at minimum one concise Tier 2 entry or an inbox note.
-
-## Maintenance triggers
-
-Maintenance is due when any condition is true:
-
-- user says `run BIMRI maintenance` or similar;
-- `run_count - last_light_maintenance_run >= light_maintenance_interval_runs`;
-- `run_count - last_deep_maintenance_run >= deep_maintenance_interval_runs`;
-- active entries exceed `max_active_entries`;
-- estimated tokens exceed `token_budget_soft`;
-- estimated tokens exceed `token_budget_hard`;
-- inbox files exceed `max_inbox_files`;
-- pattern count exceeds `max_patterns`.
-
-## Maintenance modes
-
-Read `maintenance_mode` from `.bimri/state.json`.
-
-- `ask`: ask before compression, archival, or promotion.
-- `warn`: announce safe maintenance before doing it. This is the default.
-- `auto`: run safe maintenance without interrupting, but still never hard-delete.
-
-Hard deletion is never automatic. It requires an explicit user command.
-
-Safe warning language:
+With the engine, via hooks or as the first command of a cron run:
 
 ```text
-BIMRI maintenance is due: run R020, active memory over soft budget. I am compacting Tier 2 and moving stale items to `.bimri/archive/2026-05.md`. Nothing will be deleted.
+python3 bimri-engine.py start
 ```
 
-## Light maintenance
+The engine counts the run, performs safe mechanical archival, detects orphans, opens the run log, rebuilds the index, and prints a BIMRI BRIEF directly into context. The agent then reads `bimri.md`, resolves every JUDGMENT NEEDED item in the brief, and begins work.
 
-Light maintenance should run every 3 runs or when active memory is slightly over budget.
+Protocol-only fallback, in order: read `bimri.md`, create it from the template if missing, create `.bimri/` directories if missing, increment `run_count` in `state.json`, check the previous run log for a missing `[CLOSED:]` line and run orphan recovery if found, create this run's log stub, apply the simplified decay rule, then begin work.
 
-Steps:
+On a brand-new project with an empty Tier 1, ask at most three orientation questions: what this project is for, what matters most right now, and what constraints future agents should remember. If the user skips intake, populate from observed context.
 
-1. Back up `bimri.md`.
-2. Move closed or stale Tier 2 entries to `.bimri/archive/YYYY-MM.md`.
-3. Consolidate related active entries.
-4. Move uncertain or low-value details to `.bimri/inbox/`.
-5. Recalculate weights.
-6. Update `last_light_maintenance_run`.
-7. Report briefly what changed.
+## During Work
 
-## Deep maintenance
+Work normally. Journal into the run log at decision moments. Touch `[L:]` on hot entries that materially recur. Promote a new headline into Tier 2 only when it will affect future sessions. Resist storing anything that code, docs, issues, or agent auto memory already hold.
 
-Deep maintenance should run every 10 runs or when the hard budget is exceeded.
+## Closing A Run
 
-Steps:
-
-1. Back up `bimri.md`.
-2. Review Tier 1 for accuracy. Ask before rewriting durable facts.
-3. Compress Tier 2 into the smallest useful active state.
-4. Archive closed, stale, duplicated, or low-value entries.
-5. Review Tier 3 patterns. Merge, weaken, promote, or archive patterns based on evidence.
-6. Ensure every pattern has evidence IDs.
-7. Clean unused tags.
-8. Update state fields.
-9. Report briefly what changed.
-
-## Archive policy
-
-Automatic maintenance may archive. It may not hard-delete.
-
-Archive format:
+Append the `[OUTCOME:]` line to the run log, add or refresh hot memory headlines for anything durable from this run, then close:
 
 ```text
-.bimri/archive/YYYY-MM.md
+python3 bimri-engine.py close
 ```
 
-Archived content should preserve original IDs so Tier 3 evidence remains traceable.
+The engine stamps closure, stamps any orphans, enforces hard caps, and rebuilds the index. In protocol-only mode, the agent writes the `[OUTCOME:]` and `[CLOSED:]` lines itself and trims Tier 2 to its cap by archiving the weakest lines to `.bimri/archive/YYYY-MM.md` with an `[ARCHIVED:run date]` prefix.
 
-## Inbox policy
-
-Use `.bimri/inbox/` for raw or uncertain notes.
-
-Inbox notes should be short. They are not active memory until consolidated.
-
-Suggested filename:
+Cron wiring, with a semicolon so closure runs even when the agent dies:
 
 ```text
-.bimri/inbox/R017-note.md
+cd /path/to/project && python3 bimri-engine.py start && <agent command> ; python3 bimri-engine.py close
 ```
+
+## Orphan Recovery
+
+A run log without a `[CLOSED:]` line means the run died before finishing: turn overflow, crash, closed laptop, context compaction. The next start brief names the orphan. The agent reads the tail of that log, promotes anything durable into hot memory as headlines, and continues. The close command then stamps the orphan with `[OUTCOME:overflow]` and an auto-closure line. Dead runs lose nothing that was journaled, which under write-ahead journaling means dead runs lose nothing.
+
+## Maintenance
+
+The engine performs safe mechanical archival at every start, so maintenance debt never accumulates. `python3 bimri-engine.py maintain` forces a pass on demand and prints any judgment items. `maintenance_mode` in `state.json` keeps its v3 meanings: `ask` before acting, `warn` then act, `auto` act and report. Hard deletion is never automatic in any mode. The archive grows monthly files forever; the index keeps all of it retrievable, and disk is cheap where context is expensive.
+
+## Pattern Graduation
+
+Patterns are the compounding layer. Evidence IDs stay permanently resolvable through the index, so observations accumulate across hundreds of runs instead of dying with the archive.
+
+The lifecycle runs: observation, pattern, rule. An `established` pattern that has survived 10 or more runs without a falsifying observation is a graduation candidate. Graduation writes a one-line `[rule]` entry into Tier 1 and archives the pattern with its evidence trail intact. Under `ask` or `warn` mode, propose graduation to the user first. A graduated rule changes agent behavior in every future session, which is the loop the whole protocol exists to close.
+
+Outcome lines feed patterns about the agent itself. Recurring `overflow` or `fail` outcomes with a shared cause are pattern evidence like anything else, so the system surfaces its own failure modes from data.
+
+## Inbox Policy
+
+`.bimri/inbox/` holds short raw notes that are not yet memory, named `R047-note.md`. The start brief reports the inbox count. Consolidate during any run with spare attention: promote, merge into an existing entry, or archive. The inbox is a buffer, never a destination.
 
 ## Rules
 
-- `bimri.md` is active operating state, not a session diary.
-- When in doubt, write to `.bimri/inbox/`, not core BIMRI.
-- Never hard-delete memory automatically.
-- Preserve IDs when archiving.
-- Tier 1 should stay small and stable.
-- Tier 2 should be aggressively compact.
-- Tier 3 patterns require evidence IDs.
-- High-importance Tier 2 entries are not immortal. Promote durable facts to Tier 1 or archive stale context.
-- Do not duplicate information that auto memory, code, docs, or issue trackers already handle well.
+- Hot memory is headlines and pointers. Bodies live in run logs.
+- Write ahead. Journal at the moment of decision.
+- The caps are the budget. One line per entry, no exceptions.
+- Run logs are append-only and never edited after the fact.
+- Never hard-delete memory automatically. Archive with provenance.
+- Preserve IDs everywhere so the index can always resolve them.
+- No evidence IDs, no pattern. No falsifier, no pattern.
+- Established patterns graduate into Tier 1 rules.
+- When unsure, write to the inbox.
+- Arithmetic belongs to the engine. Judgment belongs to the agent.
 
-## Corruption recovery
+## Corruption Recovery
 
-If `bimri.md` is corrupted or unreadable:
+If `bimri.md` is corrupted, restore the newest snapshot from `.bimri/backups/`. If no backup exists, recreate from the template, rebuild the index with `python3 bimri-engine.py index`, and reconstruct Tier 2 headlines from the most recent run logs. Run logs are the durable record; hot memory is always rebuildable from them. Never invent lost context.
 
-1. Check `.bimri/backups/` for the latest usable backup.
-2. If no backup exists, create a fresh file from `BIMRI-MEMORY.template.md`.
-3. Note in Tier 2 that memory history was lost or partially recovered.
-4. Do not invent lost context.
-
-<!-- END BIMRI PROTOCOL -->
+<!-- END BIMRI PROTOCOL v4 -->
